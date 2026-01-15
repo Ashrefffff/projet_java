@@ -1,0 +1,52 @@
+package service;
+
+import model.CryptoQuote;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+public final class FakeCryptoMarket {
+    private final List<CryptoQuote> quotes = new ArrayList<>();
+    private final Random rng = new Random(42);
+
+    public FakeCryptoMarket() {
+        quotes.add(new CryptoQuote("BTC", "Bitcoin", 42000));
+        quotes.add(new CryptoQuote("ETH", "Ethereum", 2200));
+        quotes.add(new CryptoQuote("SOL", "Solana", 95));
+        quotes.add(new CryptoQuote("BNB", "BNB", 310));
+        quotes.add(new CryptoQuote("XRP", "XRP", 0.62));
+        quotes.add(new CryptoQuote("ADA", "Cardano", 0.45));
+        for (int i = 0; i < 40; i++) tick();
+    }
+
+    public List<CryptoQuote> getQuotes() {
+        return quotes;
+    }
+
+    public void tick() {
+        for (CryptoQuote q : quotes) {
+            double p = q.getPrice();
+            double vol = volatility(q.getSymbol());
+            double shock = (rng.nextGaussian() * vol);
+            double next = Math.max(0.0001, p * (1.0 + shock));
+            q.push(next);
+            double base = (rng.nextGaussian() * vol) * 100.0;
+            q.setChange24hPct(clamp(base, -12, 12));
+        }
+    }
+
+    private double volatility(String sym) {
+        return switch (sym) {
+            case "BTC" -> 0.003;
+            case "ETH" -> 0.004;
+            case "SOL" -> 0.010;
+            case "BNB" -> 0.006;
+            default -> 0.012;
+        };
+    }
+
+    private double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+}
