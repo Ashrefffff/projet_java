@@ -1,0 +1,65 @@
+package model;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.OptionalDouble;
+
+public abstract class Asset {
+    private String symbole;
+    private String nom;
+    private List<PricePoint> priceHistory = new ArrayList<>();
+
+    public Asset() {}
+    protected Asset(String symbole, String nom) {
+        this.symbole = symbole;
+        this.nom = nom;
+    }
+
+    public String getSymbole() {
+        return symbole;
+    }
+
+    public String getNom() {
+        return nom;
+    }
+
+    public void setSymbole(String symbole) {
+        this.symbole = symbole;
+    }
+
+    public void setNom(String nom) {
+        this.nom = nom;
+    }
+
+    public List<PricePoint> getPriceHistory() {
+        return priceHistory;
+    }
+
+    public void setPriceHistory(List<PricePoint> priceHistory) {
+        this.priceHistory = priceHistory;
+    }
+
+    public OptionalDouble getPriceAt(LocalDate date) {
+        PricePoint best = null;
+        for (PricePoint p : priceHistory) {
+            if (p.getDate() == null) continue;
+            if (!p.getDate().isAfter(date)) {
+                if (best == null || p.getDate().isAfter(best.getDate())) best = p;
+            }
+        }
+        return best == null ? OptionalDouble.empty() : OptionalDouble.of(best.getPrix());
+    }
+
+    public void upsertPrice(PricePoint pp) {
+        for (int i = 0; i < priceHistory.size(); i++) {
+            if (priceHistory.get(i).getDate().equals(pp.getDate())) {
+                priceHistory.set(i, pp);
+                return;
+            }
+        }
+        priceHistory.add(pp);
+    }
+
+    public abstract String getAssetType();
+}
