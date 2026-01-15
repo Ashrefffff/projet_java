@@ -1,0 +1,254 @@
+package ui;
+
+import javafx.collections.FXCollections;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
+import model.*;
+import java.time.LocalDate;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public final class Dialogs {
+    private Dialogs() {}
+
+    public static void error(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.ERROR);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        a.setContentText(msg);
+        a.showAndWait();
+    }
+
+    public static boolean confirm(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        a.setContentText(msg);
+        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
+    }
+
+    public static Portfolio createPortfolioDialog() {
+        Dialog<Portfolio> d = new Dialog<>();
+        d.setTitle("Créer Portfolio");
+        ButtonType ok = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        d.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        TextField name = new TextField();
+        TextField desc = new TextField();
+        GridPane g = new GridPane();
+        g.setHgap(10); g.setVgap(10);
+        g.addRow(0, new Label("Nom"), name);
+        g.addRow(1, new Label("Description"), desc);
+        d.getDialogPane().setContent(g);
+        d.setResultConverter(bt -> {
+            if (bt != ok) return null;
+            String n = name.getText().trim();
+            String s = desc.getText().trim();
+            if (n.isEmpty()) throw new IllegalArgumentException("Nom vide");
+            return new Portfolio(n, s);
+        });
+        try {
+            return d.showAndWait().orElse(null);
+        }
+        catch (Exception ex) {
+            error("Erreur", ex.getMessage()); return null;
+        }
+    }
+
+    public static Asset createAssetDialog(boolean stock) {
+        Dialog<Asset> d = new Dialog<>();
+        d.setTitle(stock ? "Créer Stock" : "Créer CryptoToken");
+        ButtonType ok = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        d.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        TextField symbol = new TextField();
+        TextField name = new TextField();
+        GridPane g = new GridPane();
+        g.setHgap(10); g.setVgap(10);
+        g.addRow(0, new Label("Symbole"), symbol);
+        g.addRow(1, new Label("Nom"), name);
+        d.getDialogPane().setContent(g);
+        d.setResultConverter(bt -> {
+            if (bt != ok) return null;
+            String s = symbol.getText().trim();
+            String n = name.getText().trim();
+            if (s.isEmpty() || n.isEmpty()) throw new IllegalArgumentException("Champs vides");
+            return stock ? new Stock(s, n) : new CryptoToken(s, n);
+        });
+        try { return d.showAndWait().orElse(null); }
+        catch (Exception ex) { error("Erreur", ex.getMessage()); return null; }
+    }
+
+    public static Transaction transactionDialog(PortfolioManager manager, Transaction initial) {
+        Dialog<Transaction> d = new Dialog<>();
+        d.setTitle(initial == null ? "Ajouter Transaction" : "Modifier Transaction");
+        ButtonType ok = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        d.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        ComboBox<TransactionType> type = new ComboBox<>(FXCollections.observableArrayList(TransactionType.values()));
+        DatePicker date = new DatePicker(LocalDate.now());
+        TextField qty = new TextField();
+        TextField price = new TextField();
+        List<Asset> assets = collectAssets(manager);
+        ComboBox<Asset> asset = new ComboBox<>(FXCollections.observableArrayList(assets));
+        asset.setCellFactory(v -> new ListCell<>() {
+            @Override protected void updateItem(Asset a, boolean empty) {
+                super.updateItem(a, empty);
+                setText(empty || a == null ? null : a.getSymbole() + " - " + a.getNom() + " (" + a.getAssetType() + ")");
+            }
+        });
+        asset.setButtonCell(new ListCell<>() {
+            @Override protected void updateItem(Asset a, boolean empty) {
+                super.updateItem(a, empty);
+                setText(empty || a == null ? null : a.getSymbole() + " - " + a.getNom());
+            }
+        });
+        Button newStock = new Button("Nouveau Stock");
+        Button newCrypto = new Button("Nouveau Crypto");
+        newStock.setOnAction(e -> {
+            Asset created = createAssetDialog(true);
+            if (created != null) {
+                asset.getItems().add(created); asset.setValue(created);
+            }
+        });
+        newCrypto.setOnAction(e -> {
+            Asset created = createAssetDialog(false);
+            if (created != null) {
+                asset.getItems().add(created); asset.setValue(created);
+            }
+        });
+        GridPane g = new GridPane();
+        g.setHgap(10); g.setVgap(10);
+        g.addRow(0, new Label("Type"), type);
+        g.addRow(1, new Label("Date"), date);
+        g.addRow(2, new Label("Asset"), new javafx.scene.layout.HBox(8, asset, newStock, newCrypto));
+        g.addRow(3, new Label("Quantité"), qty);
+        g.addRow(4, new Label("Prix unitaire"), price);
+        d.getDialogPane().setContent(g);
+        if (initial != null) {
+            type.setValue(initial.getType());
+            date.setValue(initial.getDate());
+            asset.setValue(initial.getAsset());
+            qty.setText(Double.toString(initial.getQuantite()));
+            price.setText(Double.toString(initial.getPrixUnitaire()));
+        } else {
+            type.setValue(TransactionType.ACHAT);
+            if (!asset.getItems().isEmpty()) asset.setValue(asset.getItems().get(0));
+        }
+        d.setResultConverter(bt -> {
+            if (bt != ok) return null;
+            try {
+                double q = parsePositive(qty.getText(), "Quantité");
+                double p = parsePositive(price.getText(), "Prix unitaire");
+                Asset a = asset.getValue();
+                if (a == null) throw new IllegalArgumentException("Asset manquant");
+                return new Transaction(type.getValue(), date.getValue(), q, p, a);
+            } catch (Exception ex) {
+                error("Transaction invalide", ex.getMessage());
+                return null;
+            }
+        });
+        return d.showAndWait().orElse(null);
+    }
+
+    public static PricePoint pricePointDialog() {
+        Dialog<PricePoint> d = new Dialog<>();
+        d.setTitle("Ajouter prix");
+        ButtonType ok = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        d.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        DatePicker date = new DatePicker(LocalDate.now());
+        TextField price = new TextField();
+        GridPane g = new GridPane();
+        g.setHgap(10); g.setVgap(10);
+        g.addRow(0, new Label("Date"), date);
+        g.addRow(1, new Label("Prix"), price);
+        d.getDialogPane().setContent(g);
+        d.setResultConverter(bt -> {
+            if (bt != ok) return null;
+            try {
+                double p = parsePositive(price.getText(), "Prix");
+                return new PricePoint(date.getValue(), p);
+            } catch (Exception ex) {
+                error("Prix invalide", ex.getMessage());
+                return null;
+            }
+        });
+        return d.showAndWait().orElse(null);
+    }
+
+    public static Event eventDialog(List<Portfolio> portfolios) {
+        Dialog<Event> d = new Dialog<>();
+        d.setTitle("Ajouter Event");
+        ButtonType ok = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+        d.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        TextField titre = new TextField();
+        DatePicker date = new DatePicker(LocalDate.now());
+        TextArea desc = new TextArea();
+        desc.setPrefRowCount(3);
+        ComboBox<String> portfolioNom = new ComboBox<>();
+        portfolioNom.getItems().add("(Global)");
+        portfolioNom.getItems().addAll(portfolios.stream().map(Portfolio::getNom).collect(Collectors.toList()));
+        portfolioNom.setValue("(Global)");
+        GridPane g = new GridPane();
+        g.setHgap(10); g.setVgap(10);
+        g.addRow(0, new Label("Titre"), titre);
+        g.addRow(1, new Label("Date"), date);
+        g.addRow(2, new Label("Portfolio"), portfolioNom);
+        g.addRow(3, new Label("Description"), desc);
+        d.getDialogPane().setContent(g);
+        d.setResultConverter(bt -> {
+            if (bt != ok) return null;
+            String t = titre.getText().trim();
+            if (t.isEmpty()) throw new IllegalArgumentException("Titre vide");
+            String pn = "(Global)".equals(portfolioNom.getValue()) ? null : portfolioNom.getValue();
+            return new Event(t, date.getValue(), desc.getText().trim(), pn);
+        });
+        try {
+            return d.showAndWait().orElse(null);
+        }
+        catch (Exception ex) { error("Event invalide", ex.getMessage()); return null; }
+    }
+
+    private static double parsePositive(String s, String field) {
+        double v = Double.parseDouble(s.trim());
+        if (v <= 0) throw new IllegalArgumentException(field + " doit être > 0");
+        return v;
+    }
+
+    private static List<Asset> collectAssets(PortfolioManager manager) {
+        Map<String, Asset> bySymbol = new HashMap<>();
+        for (Portfolio p : manager.getPortefeuilles()) {
+            for (Transaction t : p.getTransactions()) {
+                if (t.getAsset() != null) bySymbol.put(t.getAsset().getSymbole(), t.getAsset());
+            }
+        }
+        return bySymbol.values().stream()
+                .sorted(Comparator.comparing(Asset::getSymbole))
+                .collect(Collectors.toList());
+    }
+
+    public static Optional<Double> askPositiveDouble(String title, String header, String hint) {
+        TextInputDialog d = new TextInputDialog();
+        d.setTitle(title);
+        d.setHeaderText(header);
+        d.setContentText(hint);
+
+        Optional<String> res = d.showAndWait();
+        if (res.isEmpty()) return Optional.empty();
+
+        try {
+            double v = Double.parseDouble(res.get().trim().replace(',', '.'));
+            if (v <= 0) throw new IllegalArgumentException();
+            return Optional.of(v);
+        } catch (Exception e) {
+            error("Valeur invalide", "Entre un nombre > 0");
+            return Optional.empty();
+        }
+    }
+    public static void info(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        a.setContentText(msg);
+        a.showAndWait();
+    }
+
+
+}
