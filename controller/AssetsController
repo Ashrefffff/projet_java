@@ -1,0 +1,89 @@
+package controller;
+
+import app.AppState;
+import model.*;
+import ui.Dialogs;
+import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.collections.FXCollections;
+import javafx.fxml.FXML;
+import javafx.scene.control.*;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public final class AssetsController {
+
+    @FXML private ListView<Asset> assetsList;
+    @FXML private TableView<PricePoint> pricesTable;
+    @FXML private TableColumn<PricePoint, java.time.LocalDate> colDate;
+    @FXML private TableColumn<PricePoint, Double> colPrice;
+    private AppState state;
+
+    public void init(AppState state) {
+        this.state = state;
+        colDate.setCellValueFactory(v -> new ReadOnlyObjectWrapper<>(v.getValue().getDate()));
+        colPrice.setCellValueFactory(v -> new ReadOnlyObjectWrapper<>(v.getValue().getPrix()));
+        assetsList.setCellFactory(v -> new ListCell<>() {
+            @Override protected void updateItem(Asset a, boolean empty) {
+                super.updateItem(a, empty);
+                setText(empty || a == null ? null : a.getSymbole() + " - " + a.getNom() + " (" + a.getAssetType() + ")");
+            }
+        });
+        state.selectedPortfolioProperty().addListener((obs, o, n) -> refreshAssets());
+        assetsList.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> refreshPrices(n));
+        state.addDataListener(this::refreshAssets);
+        refreshAssets();
+    }
+
+    private void refreshAssets() {
+        Portfolio p = state.selectedPortfolio();
+        if (p == null) {
+            assetsList.setItems(FXCollections.emptyObservableList());
+            pricesTable.setItems(FXCollections.emptyObservableList());
+            return;
+        }
+        Map<String, Asset> bySymbol = new HashMap<>();
+        for (Transaction t : p.getTransactions()) {
+            if (t == null) continue;
+            Asset a = t.getAsset();
+            if (a == null) continue;
+            String sym = a.getSymbole();
+            if (sym == null || sym.isBlank()) continue;
+            bySymbol.put(sym, a);
+        }
+        List<Asset> list = bySymbol.values().stream()
+                .sorted(Comparator.comparing(Asset::getSymbole))
+                .toList();
+        assetsList.setItems(FXCollections.observableArrayList(list));
+        if (!list.isEmpty()) {
+            if (assetsList.getSelectionModel().getSelectedItem() == null) {
+                assetsList.getSelectionModel().select(0);
+            }
+            refreshPrices(assetsList.getSelectionModel().getSelectedItem());
+        } else {
+            pricesTable.setItems(FXCollections.emptyObservableList());
+        }
+    }
+
+
+    private void refreshPrices(Asset a) {
+        if (a == null) {
+            pricesTable.setItems(FXCollections.emptyObservableList());
+            return;
+        }
+        pricesTable.setItems(FXCollections.observableArrayList(a.getPriceHistory()));
+    }
+
+
+    @FXML private void onAddPrice() {
+        Asset a = assetsList.getSelectionModel().getSelectedItem();
+        if (a == null) {
+            Dialogs.error("Aucun asset", "Ajoute d'abord une transaction (onglet Transactions) pour créer un asset, puis sélectionne-le ici.");
+            return;
+        }
+        PricePoint pp = Dialogs.pricePointDialog();
+        if (pp == null) return;
+        a.upsertPrice(pp);
+        refreshPrices(a);
+        state.dataChanged();
+    }
+}
