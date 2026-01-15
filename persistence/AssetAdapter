@@ -1,0 +1,21 @@
+package persistence;
+
+import com.google.gson.*;
+import model.*;
+import java.lang.reflect.Type;
+
+public final class AssetAdapter implements JsonSerializer<Asset>, JsonDeserializer<Asset> {
+    @Override
+    public JsonElement serialize(Asset src, Type typeOfSrc, JsonSerializationContext context) {
+        JsonObject obj = (JsonObject) context.serialize(src, src.getClass());
+        obj.addProperty("kind", src.getAssetType());
+        return obj;
+    }
+    @Override
+    public Asset deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
+        JsonObject obj = json.getAsJsonObject();
+        String kind = obj.has("kind") ? obj.get("kind").getAsString() : "Stock";
+        Class<? extends Asset> cls = "CryptoToken".equalsIgnoreCase(kind) ? CryptoToken.class : Stock.class;
+        return context.deserialize(obj, cls);
+    }
+}
