@@ -1,0 +1,58 @@
+package service;
+
+import model.*;
+import java.time.LocalDate;
+import java.util.*;
+
+public final class PortfolioAnalytics {
+
+    private PortfolioAnalytics() {}
+
+    public static double valueAt(Portfolio p, LocalDate date) {
+        Map<String, Double> holdings = p.holdingsAt(date);
+        Map<String, Asset> assetBySymbol = new HashMap<>();
+        for (Transaction t : p.getTransactions()) {
+            if (t.getAsset() != null) assetBySymbol.put(t.getAsset().getSymbole(), t.getAsset());
+        }
+        double total = 0.0;
+        for (var e : holdings.entrySet()) {
+            Asset a = assetBySymbol.get(e.getKey());
+            if (a == null) continue;
+            double qty = e.getValue();
+            double price = a.getPriceAt(date).orElse(0.0);
+            total += qty * price;
+        }
+        return total;
+    }
+
+    public static NavigableMap<LocalDate, Double> valueSeries(Portfolio p, LocalDate from, LocalDate to) {
+        if (p == null) return new TreeMap<>();
+        if (from == null || to == null) return new TreeMap<>();
+        if (from.isAfter(to)) {
+            LocalDate tmp = from;
+            from = to;
+            to = tmp;
+        }
+        NavigableMap<LocalDate, Double> series = new TreeMap<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            series.put(d, valueAt(p, d));
+        }
+        return series;
+    }
+
+    public static Map<String, Double> allocationByType(Portfolio p, LocalDate date) {
+        Map<String, Double> holdings = p.holdingsAt(date);
+        Map<String, Asset> assetBySymbol = new HashMap<>();
+        for (Transaction t : p.getTransactions()) {
+            if (t.getAsset() != null) assetBySymbol.put(t.getAsset().getSymbole(), t.getAsset());
+        }
+        Map<String, Double> out = new HashMap<>();
+        for (var e : holdings.entrySet()) {
+            Asset a = assetBySymbol.get(e.getKey());
+            if (a == null) continue;
+            double v = e.getValue() * a.getPriceAt(date).orElse(0.0);
+            out.merge(a.getAssetType(), v, Double::sum);
+        }
+        return out;
+    }
+}
