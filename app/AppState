@@ -1,0 +1,104 @@
+package app;
+
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import model.Portfolio;
+import model.PortfolioManager;
+import persistence.JsonStore;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+public final class AppState {
+
+    private final JsonStore store;
+    private final Path savePath;
+    private PortfolioManager manager = new PortfolioManager();
+    private final ObservableList<Portfolio> portfolios = FXCollections.observableArrayList();
+    private final ObjectProperty<Portfolio> selectedPortfolio = new SimpleObjectProperty<>(null);
+    private final List<Runnable> dataListeners = new ArrayList<>();
+
+    public AppState(JsonStore store, Path savePath) {
+        this.store = store;
+        this.savePath = savePath;
+    }
+
+    public void load() {
+        try {
+            PortfolioManager loaded = store.load(savePath);
+            manager = (loaded != null) ? loaded : new PortfolioManager();
+        } catch (Exception e) {
+            manager = new PortfolioManager();
+        }
+        portfolios.setAll(manager.getPortefeuilles());
+        if (portfolios.isEmpty()) {
+            selectedPortfolio.set(null);
+        } else {
+            Portfolio cur = selectedPortfolio.get();
+            if (cur == null || !portfolios.contains(cur)) {
+                selectedPortfolio.set(portfolios.get(0));
+            }
+        }
+        dataChanged();
+    }
+
+    public boolean save() {
+        try {
+            store.save(manager, savePath);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+
+    public PortfolioManager getManager() {
+        return manager;
+    }
+
+    public ObservableList<Portfolio> portfolios() {
+        return portfolios;
+    }
+
+    public ObjectProperty<Portfolio> selectedPortfolioProperty() {
+        return selectedPortfolio;
+    }
+
+    public Portfolio selectedPortfolio() {
+        return selectedPortfolio.get();
+    }
+
+    public void setSelectedPortfolio(Portfolio p) {
+        selectedPortfolio.set(p);
+    }
+
+    public void addDataListener(Runnable r) {
+        if (r == null) return;
+        if (!dataListeners.contains(r)) {
+            dataListeners.add(r);
+        }
+    }
+
+    public void removeDataListener(Runnable r) {
+        dataListeners.remove(r);
+    }
+
+    public void dataChanged() {
+        List<Runnable> copy = new ArrayList<>(dataListeners);
+        for (Runnable r : copy) {
+            try {
+                r.run();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    public void setOnDataChanged(Runnable r) {
+        dataListeners.clear();
+        if (r != null) dataListeners.add(r);
+    }
+}
